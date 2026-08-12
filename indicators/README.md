@@ -1,52 +1,27 @@
 # Multi Timeframe (MTF) Analysis & Setup Engine (Pine Script v6)
 
-An advanced TradingView Pine Script v6 indicator engineered to eliminate false counter-trend signals by combining **Dual HTF Trend Alignment (4H + 1H)** with **Lower Timeframe Momentum & Price Action Confluence**.
+An advanced TradingView Pine Script v6 indicator engineered to catch high-win-rate trends early using **3-Bar Reversal Patterns on EMA Retests after CHoCH/BoS**, **SMC Liquidity Sweeps**, and **Dual HTF Trend Alignment (4H + 1H)**.
 
 ---
 
-## 📈 Visual Trend Moving Averages (All Timeframes)
+## ⚡ 3-Bar Reversal Pattern Entry Mechanics
 
-The indicator automatically plots key visual trend EMAs directly on your chart, adapting seamlessly across all timeframes (4H, 1H, 15M, 5M, etc.):
+When price performs a retest of the **20, 50, or 200 EMA support zone** after a CHoCH / BoS break, entries are confirmed using a **3-Bar Reversal Pattern**:
 
-- **20 EMA (Light Blue)**: Fast short-term momentum trend line.
-- **50 EMA (Red)**: Intermediate trend support/resistance line.
-- **200 EMA (Green)**: Macro trend direction line.
-
----
-
-## 📊 4-Column Real-Time Dashboard Matrix
-
-| Timeframe | Matrix Item | Status / Value | Setup |
-| :--- | :--- | :--- | :--- |
-| **4H** | Macro ADX (25+) | `34.2 (Strong)` | `PASS` |
-| **4H** | Macro Bias | `+DI > -DI (Above EMA)` | `BULLISH` |
-| **1H** | Intermed Trend | `Close > 50 EMA` | `BULLISH` |
-| **15m** | Stoch (%K / %D) | `%K: 18.4 \| %D: 15.2` | `BULL CROSS` |
-| **15m** | Fast EMA (20) | `Close > 20 EMA (1.0924)` | `BULL PASS` |
-| **15m** | RSI (14) | `RSI: 52.4` | `PASS (>= 45)` |
-| **15m** | Reversal Candle | `Green (C > H[1])` | `BULL PASS` |
-| **All TF**| Overall Confluence | `All 7 Filters Passed` | `🟢 LONG READY` |
+1. **Bar 1**: Downward bar dipping into EMA support.
+2. **Bar 2**: Sweep bar making a lower low into EMA support (`low[1] < low[2]`), sweeping liquidity.
+3. **Bar 3**: Strong bullish confirmation candle closing **above the high of Bar 2** (`Close > Open` & `Close > High[1]`).
 
 ---
 
-## 🛡️ Multi-Layer Confluence Engine
+## ⚙️ Signal Mode Options
 
-1. **Macro Higher Timeframe (4H / Daily)**:
-   - **ADX > 25**: Confirms a strong trend environment.
-   - **DMI (+DI vs -DI)**: Sets the directional trend bias (Bullish vs Bearish).
-   - **Macro EMA Filter**: Price must be above the 200 EMA on the 4H timeframe.
-
-2. **Intermediate Timeframe Alignment (1H)**:
-   - Requires the **1H chart** to also align in direction (`1H Price > 1H 50 EMA` and `1H +DI > -DI`).
-
-3. **LTF Stochastic Oversold/Overbought Pullback**:
-   - Longs require Stochastic %K to cross above %D while in **Oversold territory (<= 20)**.
-   - Shorts require Stochastic %K to cross below %D while in **Overbought territory (>= 80)**.
-
-4. **LTF RSI & Momentum Confirmation**:
-   - **LTF RSI Filter**: Displays live RSI numeric value (e.g. `RSI: 52.4`) and requires `RSI >= 45` for Longs.
-   - **LTF 20 EMA Filter**: Requires price to close above the LTF 20 EMA for Longs.
-   - **Reversal Candle Filter**: Requires a green reversal candle (`Close > Open` and `Close > High[1]`).
+- `3-Bar Reversal Retest (SMC)` *(New!)*
+- `SMC CHoCH + Triple EMA Sweep`
+- `Golden Cross + 200 EMA Retest`
+- `Early Impulse (20x50 Cross)`
+- `Post-Cross Retest`
+- `Both (Impulse + Retest)` *(Default - includes 3-Bar Reversals & Retests)*
 
 ---
 
