@@ -42,15 +42,20 @@ useCandleFilter = input.bool(true, "Require Reversal Candle Pattern", group=gp_l
 gp_vis = "Visuals & Chart Plotting"
 showTable       = input.bool(true, "Show MTF Dashboard Table", group=gp_vis)
 tablePosition   = input.string("Top Right", "Table Position", options=["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group=gp_vis)
-showHtfEma      = input.bool(true, "Plot Macro HTF EMA on Chart", group=gp_vis)
-showLtfEma      = input.bool(true, "Plot LTF 20 EMA on Chart", group=gp_vis)
+showEma20       = input.bool(true, "Plot 20 EMA (Light Blue)", group=gp_vis)
+showEma50       = input.bool(true, "Plot 50 EMA (Red)", group=gp_vis)
+showEma200      = input.bool(true, "Plot 200 EMA (Green)", group=gp_vis)
+showHtfEma      = input.bool(true, "Plot Macro HTF 200 EMA on Chart", group=gp_vis)
 showSignals     = input.bool(true, "Plot Buy/Sell Signals on Chart", group=gp_vis)
 showBgColor     = input.bool(true, "Highlight Chart BG on Strong HTF Trend", group=gp_vis)
 
 // --- Group: Colors ---
 gp_col = "Color Theme"
-colorBull       = input.color(color.new(#089981, 0), "Bullish Color", group=gp_col)
-colorBear       = input.color(color.new(#f23645, 0), "Bearish Color", group=gp_col)
+colorEma20      = input.color(color.new(#00bcd4, 0), "20 EMA (Light Blue)", group=gp_col)
+colorEma50      = input.color(color.new(#f23645, 0), "50 EMA (Red)", group=gp_col)
+colorEma200     = input.color(color.new(#089981, 0), "200 EMA (Green)", group=gp_col)
+colorBull       = input.color(color.new(#089981, 0), "Bullish Signal Color", group=gp_col)
+colorBear       = input.color(color.new(#f23645, 0), "Bearish Signal Color", group=gp_col)
 colorNeutral    = input.color(color.new(#787b86, 0), "Neutral Color", group=gp_col)
 
 // ==========================================
@@ -100,6 +105,11 @@ isItfBearish     = not useItfFilter or ((itf_minus_di >= itf_plus_di) and (itf_c
 // 3. EXECUTION / LTF STOCHASTIC & CONFLUENCE
 // ==========================================
 
+// Current Chart Visual EMAs (20, 50, 200)
+chartEma20  = ta.ema(close, 20)
+chartEma50  = ta.ema(close, 50)
+chartEma200 = ta.ema(close, 200)
+
 stoch_raw = ta.stoch(close, high, low, stochKLength)
 stoch_k   = ta.sma(stoch_raw, stochKSmooth)
 stoch_d   = ta.sma(stoch_k, stochDSmooth)
@@ -137,9 +147,13 @@ shortSetup = isHtf1Bearish and isItfBearish and stochBearCross and isLtfEmaBear 
 // Always-present Unconditional Plot Anchor (Ensures Pine Script Compiler CE10246 Output Requirement)
 plot(close, title="Indicator Anchor", display=display.none)
 
-// Plot Moving Averages
-plot(showHtfEma ? htf1_ema : na, title="Macro HTF Trend EMA", color=color.new(#2962ff, 0), linewidth=2)
-plot(showLtfEma ? ltfEma : na, title="LTF Fast EMA", color=color.new(#ff9800, 0), linewidth=1)
+// Visual Trend EMAs on Current Chart (20 = Light Blue, 50 = Red, 200 = Green)
+plot(showEma20 ? chartEma20 : na, title="20 EMA (Light Blue)", color=colorEma20, linewidth=1)
+plot(showEma50 ? chartEma50 : na, title="50 EMA (Red)", color=colorEma50, linewidth=2)
+plot(showEma200 ? chartEma200 : na, title="200 EMA (Green)", color=colorEma200, linewidth=2)
+
+// Plot Macro HTF 200 EMA Line (Blue Dotted)
+plot(showHtfEma ? htf1_ema : na, title="Macro HTF 200 EMA", color=color.new(#2962ff, 0), linewidth=2, style=plot.style_circles)
 
 // Plot Setup Signals
 plotshape(showSignals and longSetup, title="Long Entry Signal", style=shape.triangleup, location=location.belowbar, color=colorBull, size=size.small, text="BUY")
@@ -149,7 +163,7 @@ plotshape(showSignals and shortSetup, title="Short Entry Signal", style=shape.tr
 bgcolor(showBgColor and isHtf1Bullish and isItfBullish ? color.new(colorBull, 90) : showBgColor and isHtf1Bearish and isItfBearish ? color.new(colorBear, 90) : na, title="Trend BG Highlight")
 
 // ==========================================
-// 6. DASHBOARD MATRIX TABLE (PINE SCRIPT V6)
+// 6. 4-COLUMN DASHBOARD MATRIX TABLE (PINE V6)
 // ==========================================
 
 f_getTablePosition(string pos) =>
@@ -160,58 +174,74 @@ f_getTablePosition(string pos) =>
         "Bottom Left"  => position.bottom_left
         => position.top_right
 
-var table mtfTable = table.new(f_getTablePosition(tablePosition), 2, 7, bgcolor=color.new(#1e222d, 10), border_width=1, border_color=color.new(#363a45, 0))
+var table mtfTable = table.new(f_getTablePosition(tablePosition), 4, 9, bgcolor=color.new(#1e222d, 10), border_width=1, border_color=color.new(#363a45, 0))
 
 if showTable and barstate.islast
-    // Header
-    table.cell(mtfTable, 0, 0, "MTF Confluence Matrix", bgcolor=color.new(#2a2e39, 0), text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 0, "Status / Filter", bgcolor=color.new(#2a2e39, 0), text_color=color.white, text_size=size.small)
-    
-    // Row 1: Macro HTF ADX (4H)
-    string adxText = str.tostring(htf1_adx, "#.#") + (isHtf1StrongTrend ? " (Strong)" : " (Weak)")
-    color adxBgColor = isHtf1StrongTrend ? color.new(#ff9800, 20) : color.new(colorNeutral, 50)
-    table.cell(mtfTable, 0, 1, "Macro HTF ADX (" + htf1Timeframe + ")", text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 1, adxText, bgcolor=adxBgColor, text_color=color.white, text_size=size.small)
+    // Header (Column 0: Timeframe | Column 1: Matrix Item | Column 2: Status / Value | Column 3: Setup)
+    table.cell(mtfTable, 0, 0, "Timeframe", bgcolor=color.new(#2a2e39, 0), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 0, "Matrix Item", bgcolor=color.new(#2a2e39, 0), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 0, "Status / Value", bgcolor=color.new(#2a2e39, 0), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 0, "Setup", bgcolor=color.new(#2a2e39, 0), text_color=color.white, text_size=size.small)
 
-    // Row 2: Macro HTF Direction (4H)
-    string htf1DirText = htf1_plus_di > htf1_minus_di ? "Bullish (+DI > -DI)" : "Bearish (-DI > +DI)"
-    color htf1DirBg = htf1_plus_di > htf1_minus_di ? color.new(colorBull, 30) : color.new(colorBear, 30)
-    table.cell(mtfTable, 0, 2, "Macro HTF Bias (" + htf1Timeframe + ")", text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 2, htf1DirText, bgcolor=htf1DirBg, text_color=color.white, text_size=size.small)
+    // Row 1: Macro HTF ADX (e.g. 4H)
+    table.cell(mtfTable, 0, 1, htf1Timeframe, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 1, "Macro ADX (" + str.tostring(adxThreshold) + "+)", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 1, str.tostring(htf1_adx, "#.#") + (isHtf1StrongTrend ? " (Strong)" : " (Weak)"), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 1, isHtf1StrongTrend ? "PASS" : "FAIL", bgcolor=isHtf1StrongTrend ? color.new(#ff9800, 20) : color.new(colorNeutral, 60), text_color=color.white, text_size=size.small)
 
-    // Row 3: Intermediate HTF Alignment (1H)
-    string itfText = isItfBullish ? "Bullish Alignment" : isItfBearish ? "Bearish Alignment" : "Counter-Trend / Off"
-    color itfBgColor = isItfBullish ? color.new(colorBull, 40) : isItfBearish ? color.new(colorBear, 40) : color.new(colorNeutral, 60)
-    table.cell(mtfTable, 0, 3, "Intermed HTF (" + itfTimeframe + ")", text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 3, itfText, bgcolor=itfBgColor, text_color=color.white, text_size=size.small)
+    // Row 2: Macro HTF Bias (DMI & EMA)
+    table.cell(mtfTable, 0, 2, htf1Timeframe, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 2, "Macro Bias", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 2, htf1_plus_di > htf1_minus_di ? "+DI > -DI (Above EMA)" : "-DI > +DI (Below EMA)", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 2, isHtf1Bullish ? "BULLISH" : isHtf1Bearish ? "BEARISH" : "NEUTRAL", bgcolor=isHtf1Bullish ? color.new(colorBull, 30) : isHtf1Bearish ? color.new(colorBear, 30) : color.new(colorNeutral, 60), text_color=color.white, text_size=size.small)
 
-    // Row 4: LTF Stoch %K / %D
-    string stochText = str.tostring(stoch_k, "#.#") + " / " + str.tostring(stoch_d, "#.#") + (isStochOversold ? " (Oversold)" : isStochOverbought ? " (Overbought)" : " (Neutral)")
-    color stochBgColor = isStochOversold ? color.new(colorBull, 40) : isStochOverbought ? color.new(colorBear, 40) : color.new(colorNeutral, 70)
-    table.cell(mtfTable, 0, 4, "LTF Stoch (%K/%D)", text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 4, stochText, bgcolor=stochBgColor, text_color=color.white, text_size=size.small)
+    // Row 3: Intermediate HTF Alignment (e.g. 1H)
+    table.cell(mtfTable, 0, 3, itfTimeframe, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 3, "Intermed Trend", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 3, itf_close > itf_ema ? "Close > " + str.tostring(itfEmaLength) + " EMA" : "Close < " + str.tostring(itfEmaLength) + " EMA", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 3, isItfBullish ? "BULLISH" : isItfBearish ? "BEARISH" : "FAIL", bgcolor=isItfBullish ? color.new(colorBull, 40) : isItfBearish ? color.new(colorBear, 40) : color.new(colorNeutral, 60), text_color=color.white, text_size=size.small)
 
-    // Row 5: LTF Filters (EMA & RSI)
-    string ltfFilterText = (isLtfEmaBull and isLtfRsiBull ? "Bullish PASS" : isLtfEmaBear and isLtfRsiBear ? "Bearish PASS" : "WAITING CONFIRMATION")
-    color ltfFilterBg = (isLtfEmaBull and isLtfRsiBull ? color.new(colorBull, 40) : isLtfEmaBear and isLtfRsiBear ? color.new(colorBear, 40) : color.new(colorNeutral, 60))
-    table.cell(mtfTable, 0, 5, "LTF EMA & RSI Filter", text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 5, ltfFilterText, bgcolor=ltfFilterBg, text_color=color.white, text_size=size.small)
+    // Row 4: LTF Stochastic Oscillator
+    table.cell(mtfTable, 0, 4, timeframe.period, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 4, "Stoch (%K / %D)", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 4, "%K: " + str.tostring(stoch_k, "#.#") + " | %D: " + str.tostring(stoch_d, "#.#"), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 4, stochBullCross ? "BULL CROSS" : stochBearCross ? "BEAR CROSS" : isStochOversold ? "OVERSOLD" : isStochOverbought ? "OVERBOUGHT" : "NEUTRAL", bgcolor=stochBullCross ? colorBull : stochBearCross ? colorBear : isStochOversold ? color.new(colorBull, 40) : isStochOverbought ? color.new(colorBear, 40) : color.new(colorNeutral, 70), text_color=color.white, text_size=size.small)
 
-    // Row 6: Overall Setup State
+    // Row 5: LTF 20 EMA Filter
+    table.cell(mtfTable, 0, 5, timeframe.period, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 5, "Fast EMA (" + str.tostring(ltfEmaLength) + ")", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 5, close > ltfEma ? "Close > " + str.tostring(ltfEma, "#.##") : "Close < " + str.tostring(ltfEma, "#.##"), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 5, isLtfEmaBull ? "BULL PASS" : isLtfEmaBear ? "BEAR PASS" : "FAIL", bgcolor=isLtfEmaBull ? color.new(colorBull, 40) : isLtfEmaBear ? color.new(colorBear, 40) : color.new(colorNeutral, 60), text_color=color.white, text_size=size.small)
+
+    // Row 6: LTF RSI Filter (Explicit Value & Status)
+    table.cell(mtfTable, 0, 6, timeframe.period, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 6, "RSI (" + str.tostring(rsiLength) + ")", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 6, "RSI: " + str.tostring(ltfRsi, "#.#"), text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 6, isLtfRsiBull ? "PASS (>=" + str.tostring(rsiMinBull, "#") + ")" : isLtfRsiBear ? "PASS (<=" + str.tostring(rsiMaxBear, "#") + ")" : "FAIL", bgcolor=isLtfRsiBull ? color.new(colorBull, 40) : isLtfRsiBear ? color.new(colorBear, 40) : color.new(colorNeutral, 60), text_color=color.white, text_size=size.small)
+
+    // Row 7: Price Action Reversal Candle
+    table.cell(mtfTable, 0, 7, timeframe.period, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 7, "Reversal Candle", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 7, close > open ? "Green (C > H[1])" : "Red (C < L[1])", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 7, isBullCandle ? "BULL PASS" : isBearCandle ? "BEAR PASS" : "WAITING", bgcolor=isBullCandle ? color.new(colorBull, 40) : isBearCandle ? color.new(colorBear, 40) : color.new(colorNeutral, 60), text_color=color.white, text_size=size.small)
+
+    // Row 8: Final Confluence State
     string setupText = longSetup ? "🟢 LONG SETUP READY" : shortSetup ? "🔴 SHORT SETUP READY" : (isHtf1Bullish and isItfBullish) ? "WAITING FOR PULLBACK" : (isHtf1Bearish and isItfBearish) ? "WAITING FOR BOUNCE" : "NO TREND CONFLUENCE"
     color setupBgColor = longSetup ? colorBull : shortSetup ? colorBear : color.new(#2a2e39, 0)
-    table.cell(mtfTable, 0, 6, "Overall Setup State", text_color=color.white, text_size=size.small)
-    table.cell(mtfTable, 1, 6, setupText, bgcolor=setupBgColor, text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 0, 8, "All TF", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 1, 8, "Overall Confluence", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 2, 8, longSetup or shortSetup ? "All 7 Filters Passed" : "Waiting for Filters", text_color=color.white, text_size=size.small)
+    table.cell(mtfTable, 3, 8, setupText, bgcolor=setupBgColor, text_color=color.white, text_size=size.small)
 
 // ==========================================
 // 7. ALERT ENGINE
 // ==========================================
 
-alertcondition(longSetup, title="MTF Long Setup Triggered", message="🟢 MTF LONG SETUP: 4H+1H Bullish Confluence with LTF Stochastic Oversold Crossover & Reversal Candle on {{ticker}} at {{close}}")
-alertcondition(shortSetup, title="MTF Short Setup Triggered", message="🔴 MTF SHORT SETUP: 4H+1H Bearish Confluence with LTF Stochastic Overbought Crossunder & Reversal Candle on {{ticker}} at {{close}}")
+alertcondition(longSetup, title="MTF Long Setup Triggered", message="🟢 MTF LONG SETUP: 4H+1H Bullish Confluence with LTF Stochastic Oversold Crossover, RSI >= {{plot_0}} & Reversal Candle on {{ticker}} at {{close}}")
+alertcondition(shortSetup, title="MTF Short Setup Triggered", message="🔴 MTF SHORT SETUP: 4H+1H Bearish Confluence with LTF Stochastic Overbought Crossunder, RSI <= {{plot_0}} & Reversal Candle on {{ticker}} at {{close}}")
 
 if longSetup
-    alert('{"event": "LONG_SETUP", "ticker": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + ', "htf_adx": ' + str.tostring(htf1_adx) + ', "stoch_k": ' + str.tostring(stoch_k) + '}', alert.freq_once_per_bar_close)
+    alert('{"event": "LONG_SETUP", "ticker": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + ', "htf_adx": ' + str.tostring(htf1_adx) + ', "stoch_k": ' + str.tostring(stoch_k) + ', "ltf_rsi": ' + str.tostring(ltfRsi) + '}', alert.freq_once_per_bar_close)
 
 if shortSetup
-    alert('{"event": "SHORT_SETUP", "ticker": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + ', "htf_adx": ' + str.tostring(htf1_adx) + ', "stoch_k": ' + str.tostring(stoch_k) + '}', alert.freq_once_per_bar_close)
+    alert('{"event": "SHORT_SETUP", "ticker": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + ', "htf_adx": ' + str.tostring(htf1_adx) + ', "stoch_k": ' + str.tostring(stoch_k) + ', "ltf_rsi": ' + str.tostring(ltfRsi) + '}', alert.freq_once_per_bar_close)
