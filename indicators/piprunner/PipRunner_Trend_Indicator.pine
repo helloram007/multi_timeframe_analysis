@@ -1,0 +1,249 @@
+//@version=6
+indicator("PipRunner Trend Indicator [MTF]", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+// ============================================================================
+// INPUT GROUPS & CONFIGURATION
+// ============================================================================
+string GROUP_EMA      = "EMA Settings"
+string GROUP_FRACTAL  = "Williams Fractals Settings"
+string GROUP_MTF      = "Multi-Timeframe (H4 HTF & H1 Key Levels)"
+string GROUP_SIGNAL   = "Signal & Risk Management"
+string GROUP_VISUAL   = "Visuals & Dot Settings"
+
+// EMA Inputs
+fastEmaLen = input.int(36, "Fast EMA Length", minval = 1, group = GROUP_EMA, tooltip = "Fast Exponential Moving Average length (Default: 36)")
+slowEmaLen = input.int(100, "Slow EMA Length", minval = 1, group = GROUP_EMA, tooltip = "Slow Exponential Moving Average length (Default: 100)")
+
+// Williams Fractals Inputs
+fractalLeft  = input.int(2, "Fractal Left Bars", minval = 1, group = GROUP_FRACTAL, tooltip = "Number of bars to the left of fractal peak/trough")
+fractalRight = input.int(2, "Fractal Right Bars", minval = 1, group = GROUP_FRACTAL, tooltip = "Number of bars to the right of fractal peak/trough")
+
+// MTF Inputs
+htfRes         = input.timeframe("240", "HTF Direction Timeframe (H4)", group = GROUP_MTF, tooltip = "Timeframe used for H4 Higher Timeframe trend direction")
+useHtfFilter   = input.bool(true, "Filter M15 Signals with H4 HTF Trend", group = GROUP_MTF, tooltip = "Only allow Longs when H4 is Bullish and Shorts when H4 is Bearish")
+keyLevelRes    = input.timeframe("60", "Key Levels Timeframe (H1)", group = GROUP_MTF, tooltip = "Timeframe used to detect H1 Support & Resistance key levels")
+showKeyLevels  = input.bool(true, "Draw H1 Support & Resistance Key Levels", group = GROUP_MTF, tooltip = "Draw dynamic horizontal lines for H1 fractal levels")
+numKeyLevels   = input.int(3, "Number of Recent H1 Levels to Keep", minval = 1, maxval = 10, group = GROUP_MTF)
+
+// Signal & Pip Inputs
+pipOffset      = input.float(1.0, "Pip Offset for Entry & SL", minval = 0.0, step = 0.1, group = GROUP_SIGNAL, tooltip = "Number of pips added/subtracted for Entry and SL")
+customPipVal   = input.float(0.0, "Custom Pip Value (0 = Auto-Detect)", minval = 0.0, group = GROUP_SIGNAL, tooltip = "Override automatic pip calculation if required")
+rrRatio        = input.float(1.0, "Reward to Risk Ratio", minval = 0.1, step = 0.1, group = GROUP_SIGNAL, tooltip = "Take Profit ratio relative to Stop Loss risk (Default: 1:1)")
+
+// Visual Inputs & Clean Dot Customization
+colorEntry     = input.color(color.blue, "Entry Dot Color", group = GROUP_VISUAL)
+colorSL        = input.color(color.red, "Stop Loss Dot Color", group = GROUP_VISUAL)
+colorTP        = input.color(color.green, "Take Profit Dot Color", group = GROUP_VISUAL)
+dotSizeChoice  = input.string("Size 1 (Tiny)", "Signal Dot Size", options = ["Size 1 (Tiny)", "Size 2 (Small)"], group = GROUP_VISUAL)
+
+showDots       = input.bool(true, "Show Entry / SL / TP Price Dots (15M Only)", group = GROUP_VISUAL)
+showDashboard  = input.bool(true, "Show HTF Info Dashboard", group = GROUP_VISUAL)
+
+// ============================================================================
+// PIP SIZE CALCULATION
+// ============================================================================
+getPipValue() =>
+    if customPipVal > 0
+        customPipVal
+    else
+        syminfo.mintick * (syminfo.type == "forex" ? 10 : 1)
+
+pip = getPipValue()
+
+// ============================================================================
+// TIMEFRAME VALIDATION & 15M ENFORCEMENT
+// ============================================================================
+string SIGNAL_TIMEFRAME = "15"
+is15mTimeframe          = timeframe.isintraday and timeframe.multiplier == 15
+
+// Entry signal dots are ONLY displayed when viewing the 15M timeframe
+showDots15M = showDots and is15mTimeframe
+
+// Display on-chart warning banner if chart timeframe is not 15m
+var table tfWarning = table.new(position.top_center, 1, 1, bgcolor = color.new(color.red, 10), border_width = 1, border_color = color.white)
+if barstate.islast
+    if not is15mTimeframe
+        table.cell(tfWarning, 0, 0, "⚠️ Entry signal dots are active on 15M chart only. Switch to 15m timeframe.", text_color = color.white, text_size = size.small)
+    else
+        table.cell(tfWarning, 0, 0, "")
+
+// ============================================================================
+// EMAS & MARKET STRUCTURE (STRICTLY 15M TIMEFRAME)
+// ============================================================================
+// Request 15M series for strict 15M fractal and entry execution
+m15High  = request.security(syminfo.tickerid, SIGNAL_TIMEFRAME, high, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+m15Low   = request.security(syminfo.tickerid, SIGNAL_TIMEFRAME, low, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+m15Close = request.security(syminfo.tickerid, SIGNAL_TIMEFRAME, close, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+fastEma = ta.ema(m15Close, fastEmaLen)
+slowEma = ta.ema(m15Close, slowEmaLen)
+
+emaBullish = fastEma > slowEma
+emaBearish = fastEma < slowEma
+
+// Williams Fractals Detection (Calculated Strictly on 15M Timeframe)
+fHighRaw = ta.pivothigh(m15High, fractalLeft, fractalRight)
+fLowRaw  = ta.pivotlow(m15Low, fractalLeft, fractalRight)
+
+fHigh = not na(fHighRaw)
+fLow  = not na(fLowRaw)
+
+// Track confirmed 15M swing fractal prices
+var float recentFHigh = na
+var float prevFHigh   = na
+var float recentFLow  = na
+var float prevFLow    = na
+
+if fHigh
+    prevFHigh   := recentFHigh
+    recentFHigh := m15High[fractalRight]
+
+if fLow
+    prevFLow   := recentFLow
+    recentFLow := m15Low[fractalRight]
+
+// Fractal Cycle Tracking:
+isLowerHighFractal = fHigh and not na(prevFHigh) and (m15High[fractalRight] < prevFHigh)
+isHigherLowFractal = fLow and not na(prevFLow) and (m15Low[fractalRight] > prevFLow)
+
+// Market Structure Status for Dashboard:
+isHH = not na(recentFHigh) and not na(prevFHigh) and recentFHigh > prevFHigh
+isHL = not na(recentFLow) and not na(prevFLow) and recentFLow > prevFLow
+isLH = not na(recentFHigh) and not na(prevFHigh) and recentFHigh < prevFHigh
+isLL = not na(recentFLow) and not na(prevFLow) and recentFLow < prevFLow
+
+structureBullish = isHH and isHL
+structureBearish = isLH and isLL
+
+// ============================================================================
+// HTF (H4) DIRECTION & H1 KEY LEVELS (SECURITY REQUESTS)
+// ============================================================================
+// H4 HTF Trend (EMAs)
+h4FastEma = request.security(syminfo.tickerid, htfRes, ta.ema(close, fastEmaLen), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+h4SlowEma = request.security(syminfo.tickerid, htfRes, ta.ema(close, slowEmaLen), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+htfBullish = h4FastEma > h4SlowEma
+htfBearish = h4FastEma < h4SlowEma
+
+// H1 Key Levels (Fractals)
+h1FHighRaw = request.security(syminfo.tickerid, keyLevelRes, ta.pivothigh(high, fractalLeft, fractalRight), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+h1FLowRaw  = request.security(syminfo.tickerid, keyLevelRes, ta.pivotlow(low, fractalLeft, fractalRight), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+var line[] h1ResLines = array.new_line()
+var line[] h1SupLines = array.new_line()
+
+if showKeyLevels
+    if not na(h1FHighRaw)
+        l = line.new(bar_index - 20, h1FHighRaw, bar_index + 20, h1FHighRaw, color = color.new(color.red, 30), style = line.style_dashed, width = 1, extend = extend.right)
+        array.push(h1ResLines, l)
+        if array.size(h1ResLines) > numKeyLevels
+            line.delete(array.shift(h1ResLines))
+
+    if not na(h1FLowRaw)
+        l = line.new(bar_index - 20, h1FLowRaw, bar_index + 20, h1FLowRaw, color = color.new(color.green, 30), style = line.style_dashed, width = 1, extend = extend.right)
+        array.push(h1SupLines, l)
+        if array.size(h1SupLines) > numKeyLevels
+            line.delete(array.shift(h1SupLines))
+
+// ============================================================================
+// PIPRUNNER TREND SIGNAL CONDITIONS
+// ============================================================================
+longCondition  = emaBullish and isLowerHighFractal and (not useHtfFilter or htfBullish)
+shortCondition = emaBearish and isHigherLowFractal and (not useHtfFilter or htfBearish)
+
+// ============================================================================
+// PRICE LEVEL CALCULATIONS (ENTRY, STOP LOSS, TAKE PROFIT)
+// ============================================================================
+var float longEntryPrice = na
+var float longSLPrice    = na
+var float longTPPrice    = na
+
+var float shortEntryPrice = na
+var float shortSLPrice    = na
+var float shortTPPrice    = na
+
+if longCondition
+    longEntryPrice := m15High[fractalRight] + (pipOffset * pip)
+    longSLPrice    := not na(recentFLow) ? (recentFLow - (pipOffset * pip)) : (low - (pipOffset * pip))
+    risk            = longEntryPrice - longSLPrice
+    longTPPrice    := longEntryPrice + (risk * rrRatio)
+
+if shortCondition
+    shortEntryPrice := m15Low[fractalRight] - (pipOffset * pip)
+    shortSLPrice    := not na(recentFHigh) ? (recentFHigh + (pipOffset * pip)) : (high + (pipOffset * pip))
+    risk             = shortSLPrice - shortEntryPrice
+    shortTPPrice    := shortEntryPrice - (risk * rrRatio)
+
+// Signal values for plotting
+plotLongEntry = longCondition ? longEntryPrice : na
+plotLongSL    = longCondition ? longSLPrice    : na
+plotLongTP    = longCondition ? longTPPrice    : na
+
+plotShortEntry = shortCondition ? shortEntryPrice : na
+plotShortSL    = shortCondition ? shortSLPrice    : na
+plotShortTP    = shortCondition ? shortTPPrice    : na
+
+// ============================================================================
+// VISUALIZATIONS & PLOTS (CLEAN DOTS ONLY - NO SIGNAL LINES)
+// ============================================================================
+// EMAs
+plot(fastEma, "Fast EMA (36)", color = color.new(color.blue, 0), linewidth = 2)
+plot(slowEma, "Slow EMA (100)", color = color.new(color.orange, 0), linewidth = 2)
+
+// Williams Fractals Chevrons (NO TEXT LABELS, CLEAN CHEVRONS)
+plotshape(fHigh, title = "Fractal High Chevron (Pullback High)", style = shape.triangleup, location = location.abovebar, color = color.new(color.red, 15), size = size.tiny, offset = -fractalRight)
+plotshape(fLow, title = "Fractal Low Chevron (Pullback Low)", style = shape.triangledown, location = location.belowbar, color = color.new(color.green, 15), size = size.tiny, offset = -fractalRight)
+
+// ----------------------------------------------------------------------------
+// CLEAN SIGNAL DOTS ONLY (15M TIMEFRAME ONLY - NO LINES)
+// ----------------------------------------------------------------------------
+// Long Entry, SL, TP Dots:
+// Size 1 (Tiny - Default)
+plotshape(showDots15M and dotSizeChoice == "Size 1 (Tiny)" ? plotLongEntry : na, title = "Long Entry Dot (Tiny)", style = shape.circle, location = location.absolute, color = colorEntry, size = size.tiny)
+plotshape(showDots15M and dotSizeChoice == "Size 1 (Tiny)" ? plotLongSL : na,    title = "Long SL Dot (Tiny)", style = shape.circle, location = location.absolute, color = colorSL, size = size.tiny)
+plotshape(showDots15M and dotSizeChoice == "Size 1 (Tiny)" ? plotLongTP : na,    title = "Long TP Dot (Tiny)", style = shape.circle, location = location.absolute, color = colorTP, size = size.tiny)
+
+// Size 2 (Small)
+plotshape(showDots15M and dotSizeChoice == "Size 2 (Small)" ? plotLongEntry : na, title = "Long Entry Dot (Small)", style = shape.circle, location = location.absolute, color = colorEntry, size = size.small)
+plotshape(showDots15M and dotSizeChoice == "Size 2 (Small)" ? plotLongSL : na,    title = "Long SL Dot (Small)", style = shape.circle, location = location.absolute, color = colorSL, size = size.small)
+plotshape(showDots15M and dotSizeChoice == "Size 2 (Small)" ? plotLongTP : na,    title = "Long TP Dot (Small)", style = shape.circle, location = location.absolute, color = colorTP, size = size.small)
+
+// Short Entry, SL, TP Dots:
+// Size 1 (Tiny - Default)
+plotshape(showDots15M and dotSizeChoice == "Size 1 (Tiny)" ? plotShortEntry : na, title = "Short Entry Dot (Tiny)", style = shape.circle, location = location.absolute, color = colorEntry, size = size.tiny)
+plotshape(showDots15M and dotSizeChoice == "Size 1 (Tiny)" ? plotShortSL : na,   title = "Short SL Dot (Tiny)", style = shape.circle, location = location.absolute, color = colorSL, size = size.tiny)
+plotshape(showDots15M and dotSizeChoice == "Size 1 (Tiny)" ? plotShortTP : na,   title = "Short TP Dot (Tiny)", style = shape.circle, location = location.absolute, color = colorTP, size = size.tiny)
+
+// Size 2 (Small)
+plotshape(showDots15M and dotSizeChoice == "Size 2 (Small)" ? plotShortEntry : na, title = "Short Entry Dot (Small)", style = shape.circle, location = location.absolute, color = colorEntry, size = size.small)
+plotshape(showDots15M and dotSizeChoice == "Size 2 (Small)" ? plotShortSL : na,   title = "Short SL Dot (Small)", style = shape.circle, location = location.absolute, color = colorSL, size = size.small)
+plotshape(showDots15M and dotSizeChoice == "Size 2 (Small)" ? plotShortTP : na,   title = "Short TP Dot (Small)", style = shape.circle, location = location.absolute, color = colorTP, size = size.small)
+
+// ============================================================================
+// HTF & STRATEGY INFO DASHBOARD TABLE
+// ============================================================================
+var table dash = table.new(position.top_right, 2, 4, bgcolor = color.new(color.black, 20), border_width = 1, border_color = color.gray)
+if barstate.islast and showDashboard
+    table.cell(dash, 0, 0, "PipRunner Trend", text_color = color.white, bgcolor = color.navy, text_size = size.small)
+    table.cell(dash, 1, 0, "MTF Status", text_color = color.white, bgcolor = color.navy, text_size = size.small)
+
+    table.cell(dash, 0, 1, "H4 HTF Trend", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 1, htfBullish ? "BULLISH 🟢" : (htfBearish ? "BEARISH 🔴" : "NEUTRAL ⚪"), text_color = htfBullish ? color.green : (htfBearish ? color.red : color.gray), text_size = size.small)
+
+    table.cell(dash, 0, 2, "M15 EMA 36/100", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 2, emaBullish ? "BULLISH 🟢" : (emaBearish ? "BEARISH 🔴" : "NEUTRAL ⚪"), text_color = emaBullish ? color.green : (emaBearish ? color.red : color.gray), text_size = size.small)
+
+    table.cell(dash, 0, 3, "M15 Structure", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 3, structureBullish ? "HH/HL 🟢" : (structureBearish ? "LH/LL 🔴" : "MIXED ⚪"), text_color = structureBullish ? color.green : (structureBearish ? color.red : color.gray), text_size = size.small)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+alertcondition(longCondition, title = "PipRunner Long Signal", message = "PipRunner LONG Signal! Check chart for Entry, SL, and TP levels.")
+alertcondition(shortCondition, title = "PipRunner Short Signal", message = "PipRunner SHORT Signal! Check chart for Entry, SL, and TP levels.")
+
+if longCondition
+    alert("PipRunner LONG Setup Triggered! Entry: " + str.tostring(longEntryPrice, "#.#####") + " | SL: " + str.tostring(longSLPrice, "#.#####") + " | TP: " + str.tostring(longTPPrice, "#.#####"), alert.freq_once_per_bar_close)
+
+if shortCondition
+    alert("PipRunner SHORT Setup Triggered! Entry: " + str.tostring(shortEntryPrice, "#.#####") + " | SL: " + str.tostring(shortSLPrice, "#.#####") + " | TP: " + str.tostring(shortTPPrice, "#.#####"), alert.freq_once_per_bar_close)
