@@ -1,41 +1,38 @@
 # PipRunner Trend Indicator (Pine Script v6)
 
-An advanced TradingView Pine Script v6 indicator implementing the **PipRunner Trend Strategy**, with strict **15-minute timeframe fractal calculations & entries**, Higher Timeframe (H4) direction filtering, dynamic H1 key levels, clean visual signals, and real-time alerts.
+An advanced TradingView Pine Script v6 indicator implementing the official **SmartCharts PipRunner Trend Strategy**, with strict **15-minute breakout entry triggers**, Higher Timeframe (H4) direction filtering, dynamic H1 key levels, chop-prevention filters, and real-time alerts.
 
 ---
 
-## 📈 Strategy Overview
+## 📈 Strategy Overview & SmartCharts Signal Rules
 
-The **PipRunner Trend** strategy is built specifically for the **15-minute timeframe**. All trade signals, Williams Fractals, market structure calculations, and entry/exit points are calculated strictly on **15M candles**.
+The **PipRunner Trend** strategy evaluates market structure, 36 & 100 EMAs, and Williams Fractal chevrons strictly on the **15-minute timeframe**:
 
-### 🟢 Long Setup Criteria (15M Timeframe)
+### 🟢 Long Setup Rules (SmartCharts Official)
 1. **EMA Trend Alignment**: 15M Fast EMA (36) > 15M Slow EMA (100).
-2. **Pullback Confirmation**: A 15M Lower High fractal chevron forms during retracement.
+2. **Lower High Fractal Chevron (`^`)**: Price pulls back during an uptrend and forms a **Lower High Up Fractal (`^`)**.
 3. **HTF Filter**: 4-Hour trend alignment (H4 Fast EMA > H4 Slow EMA).
-4. **Entry Price**: 1 Pip above the 15M Lower High fractal peak (**Blue Dot** by default).
-5. **Stop Loss**: 1 Pip below the most recent 15M fractal low (**Red Dot** by default).
-6. **Take Profit**: 1:1 Reward-to-Risk ratio (**Green Dot** by default).
+4. **Buy Entry Level**: **1 Pip ABOVE the most recent fractal high** (**Blue Diamond**).
+5. **Stop Loss Level**: **1 Pip BELOW the most recent fractal low** (**Red Dot**).
+6. **Take Profit Level**: **1:1 Reward to Risk** relative to Entry and Stop Loss (**Green Dot**).
 
-### 🔴 Short Setup Criteria (15M Timeframe)
+### 🔴 Short Setup Rules (SmartCharts Official)
 1. **EMA Trend Alignment**: 15M Fast EMA (36) < 15M Slow EMA (100).
-2. **Pullback Confirmation**: A 15M Higher Low fractal chevron forms during retracement.
+2. **Higher Low Fractal Chevron (`v`)**: Price pulls back during a downtrend and forms a **Higher Low Down Fractal (`v`)**.
 3. **HTF Filter**: 4-Hour trend alignment (H4 Fast EMA < H4 Slow EMA).
-4. **Entry Price**: 1 Pip below the 15M Higher Low fractal trough (**Blue Dot** by default).
-5. **Stop Loss**: 1 Pip above the most recent 15M fractal high (**Red Dot** by default).
-6. **Take Profit**: 1:1 Reward-to-Risk ratio (**Green Dot** by default).
+4. **Sell Entry Level**: **1 Pip BELOW the most recent fractal low** (**Blue Diamond**).
+5. **Stop Loss Level**: **1 Pip ABOVE the most recent fractal high** (**Red Dot**).
+6. **Take Profit Level**: **1:1 Reward to Risk** relative to Entry and Stop Loss (**Green Dot**).
 
 ---
 
 ## 🛠️ Key Features
 
-- **Clutter-Free Visuals**: Removed signal target lines completely so the chart remains clean and uncluttered.
-- **Subtle Signal Dots**: Signal dots default to **Size 1 (Tiny)** to keep price action crisp and readable.
-- **15M-Only Signal & Dot Visibility**: Entry dots are displayed **ONLY when viewing the 15-minute chart**, keeping 1H, 4H, and higher timeframes completely clean.
-- **Configurable Colors**:
-  - Entry Dot Color (default: `Blue`).
-  - Stop Loss Dot Color (default: `Red`).
-  - Take Profit Dot Color (default: `Green`).
-- **Clean Williams Fractals**: Displayed as clean chevrons (`shape.triangleup` / `shape.triangledown`) with **no text labels**.
+- **SmartCharts Breakout Engine**: Solved signal clutter by requiring price to actively break out above/below the fractal trigger level before firing a signal.
+- **Official 1:1 R:R Calculation**: Computes exact Entry, Stop Loss (1 pip offset), and Take Profit (1:1 R:R).
+- **Visual Fractal Chevrons**: Displays clean Green Up-Triangles (`^`) above bars and Red Down-Triangles (`v`) below bars matching SmartCharts graphics.
+- **ADX & EMA Chop Filters**: Suppresses setups during non-trending sideways markets when ADX(14) < 20 or EMAs squeeze.
+- **15M-Only Signal Visibility**: Entry signals display **ONLY when viewing the 15-minute chart**, keeping 1H and 4H charts completely clean.
 
 ---
 
@@ -52,18 +49,13 @@ The **PipRunner Trend** strategy is built specifically for the **15-minute timef
 
 | Setting Group | Option Name | Default | Description |
 | :--- | :--- | :--- | :--- |
-| **EMA Settings** | Fast EMA Length | `36` | Fast Exponential Moving Average length (15M) |
-| **EMA Settings** | Slow EMA Length | `100` | Slow Exponential Moving Average length (15M) |
-| **Williams Fractals** | Left / Right Bars | `2` | Number of 15M bars required on each side to confirm a fractal |
+| **EMA Settings** | Fast / Slow EMA Length | `36` / `100` | Fast and Slow EMA lengths |
+| **Williams Fractals** | Left / Right Bars | `2` | Number of 15M bars required on each side for fractal |
+| **False Signal Filters** | Filter Chop with ADX | `true` | Suppress setups when ADX < 20 |
 | **Multi-Timeframe** | HTF Direction Timeframe | `240` (H4) | Timeframe for higher-timeframe trend filter |
-| **Multi-Timeframe** | Filter M15 Signals with H4 | `true` | Restrict 15M entries to match H4 HTF direction |
-| **Multi-Timeframe** | Key Levels Timeframe | `60` (H1) | Timeframe used for key support & resistance levels |
-| **Signal & Risk** | Pip Offset | `1.0` | Number of pips added/subtracted for Entry & SL |
-| **Signal & Risk** | Reward to Risk Ratio | `1.0` | Target profit multiplier relative to SL risk |
-| **Visuals** | Entry Dot Color | `Blue` | Customizable Entry Dot color |
-| **Visuals** | Stop Loss Dot Color | `Red` | Customizable Stop Loss Dot color |
-| **Visuals** | Take Profit Dot Color | `Green` | Customizable Take Profit Dot color |
-| **Visuals** | Signal Dot Size | `Size 1 (Tiny)` | Choose between Size 1 (Tiny) and Size 2 (Small) |
+| **Multi-Timeframe** | Key Levels Timeframe | `60` (H1) | Timeframe for dynamic support & resistance levels |
+| **Signal & Risk** | Take Profit Target Mode | `Fixed R:R Multiplier` | Select Fixed R:R vs Dynamic H1 Key Level TP |
+| **Signal & Risk** | Reward to Risk Ratio | `1.0` | Target profit multiplier (SmartCharts default: 1:1) |
 
 ---
 
